@@ -7,76 +7,15 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
-body{
-margin:0;
-font-family:Arial;
-background:#1e1e1e;
-color:white;
-}
-
-header{
-background:#b30000;
-padding:12px;
-text-align:center;
-font-weight:bold;
-}
-
-.container{
-padding:10px;
-max-width:1100px;
-margin:auto;
-display:none;
-}
-
-.box{
-background:#2b2b2b;
-padding:10px;
-margin-bottom:10px;
-border-radius:8px;
-}
-
-button{
-padding:6px;
-margin-top:5px;
-cursor:pointer;
-width:100%;
-}
-
-.vehicle{
-background:#3a3a3a;
-padding:5px;
-margin:5px 0;
-border-radius:6px;
-font-size:13px;
-cursor:pointer;
-}
-
-input,textarea,select{
-width:100%;
-margin:5px 0;
-padding:6px;
-}
-
-#login{
-position:fixed;
-top:0;left:0;right:0;bottom:0;
-background:#111;
-display:flex;
-justify-content:center;
-align-items:center;
-flex-direction:column;
-z-index:999;
-}
-
-#popup{
-display:none;
-position:fixed;
-inset:0;
-background:rgba(0,0,0,0.7);
-justify-content:center;
-align-items:center;
-z-index:999;
-}
+body{ margin:0; font-family:Arial; background:#1e1e1e; color:white; }
+header{ background:#b30000; padding:12px; text-align:center; font-weight:bold; }
+.container{ padding:10px; max-width:1100px; margin:auto; display:none; }
+.box{ background:#2b2b2b; padding:10px; margin-bottom:10px; border-radius:8px; }
+button{ padding:6px; margin-top:5px; cursor:pointer; width:100%; }
+.vehicle{ background:#3a3a3a; padding:5px; margin:5px 0; border-radius:6px; font-size:13px; cursor:pointer; }
+input,textarea,select{ width:100%; margin:5px 0; padding:6px; box-sizing:border-box; }
+#login{ position:fixed; top:0;left:0;right:0;bottom:0; background:#111; display:flex; justify-content:center; align-items:center; flex-direction:column; z-index:999; }
+#popup{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); justify-content:center; align-items:center; z-index:999; }
 </style>
 </head>
 
@@ -93,6 +32,7 @@ z-index:999;
 <option value="OPERATEUR">Opérateur</option>
 <option value="STATIONNAIRE">Stationnaire</option>
 <option value="CHEF">Chef de salle</option>
+<option value="ADMIN">Admin</option>
 </select>
 
 <button onclick="enter()">Connexion</button>
@@ -141,7 +81,7 @@ z-index:999;
 <div id="history"></div>
 </div>
 
-<div class="box" id="logBox">
+<div class="box">
 <h3>👥 Historique connexions</h3>
 <div id="logs"></div>
 <button onclick="clearLogs()">🗑 Supprimer logs</button>
@@ -158,7 +98,8 @@ z-index:999;
 
 <script>
 
-/* 🔐 USERS */
+console.log("CODIS SIMU OK");
+
 const usersMap={
 "SP-95":["OPERATEUR","CHEF","STATIONNAIRE"],
 "SP-09":["OPERATEUR","CHEF","STATIONNAIRE"],
@@ -166,11 +107,11 @@ const usersMap={
 };
 
 let user=null;
-let last=null;
 let selectedVeh=null;
 
-/* 📊 LOGS */
 let logs=JSON.parse(localStorage.getItem("logs")||"[]");
+let history=JSON.parse(localStorage.getItem("history")||"[]");
+let interventionCount=parseInt(localStorage.getItem("interventionCount")||"0") || 0;
 
 let statuses=[
 {label:"Départ",val:1},
@@ -185,40 +126,35 @@ let statuses=[
 ];
 
 let vehicules=[
-{name:"VSAV-01",status:7},
-{name:"VSAV-02",status:7},
+{name:"CCF-01",status:7},
+{name:"CCGC-01",status:7},
+{name:"EPA-01",status:7},
 {name:"FPT-01",status:7},
 {name:"FPT-02",status:7},
-{name:"CCF-01",status:7},
-{name:"EPA-01",status:7},
 {name:"FSR-01",status:7},
+{name:"SSSM-01",status:7},
 {name:"VGRIMP-01",status:7},
-{name:"VPL-01",status:7},
-{name:"CCGC-01",status:7},
 {name:"VL-01",status:7},
-{name:"VLGC-01",status:7},
-{name:"SSM-01",status:7}
+{name:"VLI-01",status:7},
+{name:"VLCG-01",status:7},
+{name:"VPL-01",status:7},
+{name:"VSAV-01",status:7},
+{name:"VSAV-02",status:7}
 ];
 
-/* 🚒 LOGIN */
 function enter(){
+
 let mat=document.getElementById("matricule").value;
 let role=document.getElementById("role").value;
 
 if(!usersMap[mat] || !usersMap[mat].includes(role)){
-alert("❌ refusé");
+alert("❌ Accès refusé");
 return;
 }
 
 user={name:mat,role:role};
 
-/* LOG CONNEXION */
-logs.push({
-matricule:mat,
-role:role,
-time:new Date().toLocaleString()
-});
-
+logs.push({matricule:mat,role:role,time:new Date().toLocaleString()});
 localStorage.setItem("logs",JSON.stringify(logs));
 
 document.getElementById("login").style.display="none";
@@ -229,9 +165,11 @@ renderHistory();
 renderLogs();
 }
 
-/* 🚒 VEHICULES */
 function renderVeh(){
+
 let box=document.getElementById("veh");
+if(!box) return;
+
 box.innerHTML="";
 
 vehicules.forEach((v,i)=>{
@@ -239,7 +177,7 @@ let div=document.createElement("div");
 div.className="vehicle";
 div.innerHTML=v.name+" - "+v.status;
 
-div.onclick=function(){
+div.onclick=()=>{
 selectedVeh=i;
 openPopup();
 };
@@ -248,9 +186,7 @@ box.appendChild(div);
 });
 }
 
-/* 🚒 POPUP */
 function openPopup(){
-if(selectedVeh===null) return;
 
 let popup=document.getElementById("popup");
 let btns=document.getElementById("statusBtns");
@@ -261,7 +197,7 @@ statuses.forEach(s=>{
 let b=document.createElement("button");
 b.innerHTML=s.label;
 
-b.onclick=function(){
+b.onclick=()=>{
 vehicules[selectedVeh].status=s.val;
 popup.style.display="none";
 renderVeh();
@@ -273,31 +209,85 @@ btns.appendChild(b);
 popup.style.display="flex";
 }
 
-/* 🚒 LOGS */
+function create(){
+
+let numero=++interventionCount;
+localStorage.setItem("interventionCount",interventionCount);
+
+let type=document.getElementById("type").value;
+let adresse=document.getElementById("adresse").value;
+let obs=document.getElementById("obs").value;
+let veh=document.getElementById("vehiculesInter").value;
+let webhook=document.getElementById("webhook").value;
+
+let text=
+`INTERVENTION N° ${numero}
+TYPE : ${type}
+ADRESSE : ${adresse}
+OBS : ${obs}
+VEHICULES : ${veh}`;
+
+document.getElementById("sheet").innerText=text;
+
+history.push({
+numero,type,adresse,time:new Date().toLocaleString()
+});
+
+localStorage.setItem("history",JSON.stringify(history));
+renderHistory();
+
+if(webhook && webhook.includes("discord")){
+fetch(webhook,{
+method:"POST",
+headers:{ "Content-Type":"application/json" },
+body:JSON.stringify({content:text})
+}).catch(()=>{});
+}
+}
+
+function copy(){
+navigator.clipboard.writeText(document.getElementById("sheet").innerText);
+alert("📋 Copié");
+}
+
+function pdf(){
+const { jsPDF } = window.jspdf;
+let doc=new jsPDF();
+doc.text(document.getElementById("sheet").innerText,10,10);
+doc.save("intervention.pdf");
+}
+
+function renderHistory(){
+
+let box=document.getElementById("history");
+if(!box) return;
+
+box.innerHTML=history.slice(-10).reverse()
+.map(h=>`N° ${h.numero} - ${h.type} - ${h.adresse} - ${h.time}`)
+.join("<br>");
+}
+
 function renderLogs(){
+
 let box=document.getElementById("logs");
-if(!box)return;
+if(!box) return;
 
 box.innerHTML=logs.slice(-10).reverse()
 .map(l=>`${l.matricule} - ${l.role} - ${l.time}`)
 .join("<br>");
 }
 
-/* 🚒 DELETE LOGS ADMIN ONLY */
 function clearLogs(){
 if(!user || user.name!=="BSPPlutèce"){
-alert("❌ accès refusé");
+alert("❌ Accès refusé");
 return;
 }
 
-if(confirm("Supprimer logs ?")){
 logs=[];
 localStorage.setItem("logs",JSON.stringify(logs));
 renderLogs();
 }
-}
 
-/* INIT */
 window.onload=function(){
 document.getElementById("login").style.display="flex";
 document.querySelector(".container").style.display="none";
