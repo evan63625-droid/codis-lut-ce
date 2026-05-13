@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>CODIS SIMU - SDIS LUTECE BSPP</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<style>
+body{margin:0;font-family:Arial;background:#1e1e1e;color:white}
+header{background:#b30000;padding:12px;text-align:center;font-weight:bold}
+.container{padding:10px;max-width:1100px;margin:auto;display:none}
+.box{background:#2b2b2b;padding:10px;margin-bottom:10px;border-radius:8px}
+button{padding:6px;margin-top:5px;cursor:pointer;width:100%}
+.btn-retour{position:fixed;top:8px;left:8px;width:auto;padding:5px 10px;margin:0;font-size:12px;background:#111;color:white;border:1px solid #fff;border-radius:5px;z-index:100}
+.vehicle{background:#3a3a3a;padding:5px;margin:5px 0;border-radius:6px;font-size:13px;cursor:pointer}
+.status-1{color:#00c853;font-weight:bold}
+.status-2{color:#2196f3;font-weight:bold}
+.status-3{color:#ffeb3b;font-weight:bold}
+.status-4{color:#ff1744;font-weight:bold}
+.status-5{color:#9c27b0;font-weight:bold}
+.status-6{color:#ff9800;font-weight:bold}
+.status-7{color:#69f0ae;font-weight:bold}
+.status-8{color:#777;font-weight:bold}
+.status-9{color:#f5f5f5;font-weight:bold}
+input,textarea,select{width:100%;margin:5px 0;padding:6px;box-sizing:border-box}
+#login{position:fixed;inset:0;background:#111;display:flex;justify-content:center;align-items:center;flex-direction:column;z-index:999}
+#popup{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);justify-content:center;align-items:center;z-index:999}
+</style>
+</head>
+<body>
+
+<div id="login">
+<h2>🚒 ACCÈS SDIS LUTECE BSPP</h2>
+<input id="matricule" placeholder="Matricule">
+<select id="role">
+<option value="OPERATEUR">Opérateur</option>
+<option value="STATIONNAIRE">Stationnaire</option>
+<option value="CHEF">Chef de salle</option>
+<option value="ADMIN">Admin</option>
+</select>
+<button onclick="enter()">Connexion</button>
+</div>
+
+<header>🚒 SDIS LUTECE BSPP</header>
+<button class="btn-retour" onclick="retourAccueil()">⬅ Accueil</button>
+
+<div class="container">
+
+<div class="box">
+<h3>📡 Intervention</h3>
+<select id="type" onchange="updatePrecis()">
+<option value="">Type intervention</option>
+<option value="SAP - Secours à personne">SAP - Secours à personne</option>
+<option value="INC - Incendie">INC - Incendie</option>
+<option value="AVP - Accident voie publique">AVP - Accident voie publique</option>
+<option value="DIV - Opération diverse">DIV - Opération diverse</option>
+<option value="NRBC - Risque chimique">NRBC - Risque chimique</option>
+<option value="GRIMP - Milieu périlleux">GRIMP - Milieu périlleux</option>
+<option value="AQUA - Secours aquatique">AQUA - Secours aquatique</option>
+<option value="FDF - Feu de forêt">FDF - Feu de forêt</option>
+</select>
+
+<select id="precision">
+<option value="">Précision intervention</option>
+</select>
+
+<input id="adresse" placeholder="Adresse">
+<textarea id="obs" placeholder="Observations"></textarea>
+<input id="vehiculesInter" placeholder="Véhicules engagés ex: VSAV-01, FPT-01">
+<input id="webhook" placeholder="Webhook Discord">
+<button onclick="createInter()">Créer + envoyer</button>
+</div>
+
+<div class="box">
+<h3>📋 Feuille intervention</h3>
+<div id="sheet">Aucune sélection</div>
+<button onclick="copySheet()">📋 Copier</button>
+<button onclick="pdf()">📥 PDF</button>
+</div>
+
+<div class="box">
+<h3>🚒 Véhicules</h3>
+<div id="veh"></div>
+</div>
+
+<div class="box">
+<h3>📚 Historique interventions</h3>
+<div id="history"></div>
+<button onclick="clearHistory()">🗑 Supprimer historique interventions</button>
+</div>
+
+<div class="box">
+<h3>👥 Historique connexions</h3>
+<div id="logs"></div>
+<button onclick="clearLogs()">🗑 Supprimer logs</button>
+</div>
+
+</div>
+
+<div id="popup">
+<div class="box">
+<h3>Changer statut</h3>
+<div id="statusBtns"></div>
+</div>
+</div>
+
+<script>
+const firebaseConfig={
+  apiKey:"AIzaSyBB8KP4Btsjvv1Dktsmt1qf1eujiuGKAWg",
+  authDomain:"codis-lutece.firebaseapp.com",
+  databaseURL:"https://codis-lutece-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"codis-lutece",
+  storageBucket:"codis-lutece.firebasestorage.app",
+  messagingSenderId:"762134476859",
+  appId:"1:762134476859:web:afcf9a2ae4073a6966c41e"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+
+const usersMap={
+"SP-95":["OPERATEUR","CHEF","STATIONNAIRE"],
+"SP-09":["OPERATEUR","CHEF","STATIONNAIRE"],
+"BSPPlutèce":["ADMIN"]
+};
+
+const precisions={
+"SAP - Secours à personne":["Malaise sur voie publique","Malaise à domicile","Personne inconsciente","Arrêt cardio-respiratoire","Douleur thoracique","Difficulté respiratoire","Chute","Traumatisme","Plaie","Brûlure","Accouchement imminent","Tentative de suicide","Ivresse publique manifeste","Rixe / agression","Personne âgée ne répondant pas"],
+"INC - Incendie":["Feu d'habitation","Feu d'appartement","Feu de maison","Feu de cave","Feu de garage","Feu de cheminée","Feu de véhicule","Feu de poubelle","Feu de local commercial","Feu industriel","Fumée suspecte","Odeur de brûlé","Déclenchement alarme incendie"],
+"AVP - Accident voie publique":["Accident VL","Accident PL","Accident moto","Accident piéton","Accident transport en commun","Véhicule sur le toit","Véhicule contre obstacle","Carambolage","Personne incarcérée","Balisage accident"],
+"DIV - Opération diverse":["Fuite de gaz","Odeur de gaz","Inondation","Assèchement","Ouverture de porte","Ascenseur bloqué","Objet menaçant de tomber","Arbre sur voie publique","Protection de biens","Balisage de sécurité"],
+"NRBC - Risque chimique":["Risque chimique","Risque radiologique","Pollution hydrocarbure","Matière dangereuse","Suspicion colis suspect","Explosion","Effondrement bâtiment"],
+"GRIMP - Milieu périlleux":["Secours en hauteur","Personne bloquée en hauteur","Personne tombée en contrebas","Sauvetage en falaise","Sauvetage sur grue","Sauvetage sur toiture","Sauvetage en excavation","Sauvetage en ravin","Reconnaissance en milieu périlleux"],
+"AQUA - Secours aquatique":["Noyade","Personne tombée à l'eau","Sauvetage nautique","Recherche personne en milieu aquatique"],
+"FDF - Feu de forêt":["Feu de broussailles","Feu de végétation","Feu de forêt","Reprise de feu"]
+};
+
+const statusLabels={
+1:"Départ",
+2:"Sur les lieux",
+3:"Message",
+4:"Urgent",
+5:"Transit hôpital",
+6:"Arrivé hôpital",
+7:"Disponible",
+8:"Indispo",
+9:"Rentré"
+};
+
+let statuses=[
+{label:"Départ",val:1},
+{label:"Sur les lieux",val:2},
+{label:"Message",val:3},
+{label:"Urgent",val:4},
+{label:"Transit hôpital",val:5},
+{label:"Arrivé hôpital",val:6},
+{label:"Disponible",val:7},
+{label:"Indispo",val:8},
+{label:"Rentré",val:9}
+];
+
+let defaultVehicules=[
+{name:"CCF-01",status:7},
+{name:"CCGC-01",status:7},
+{name:"EPA-01",status:7},
+{name:"FPT-01",status:7},
+{name:"FPT-02",status:7},
+{name:"FSR-01",status:7},
+{name:"SSSM-01",status:7},
+{name:"VGRIMP-01",status:7},
+{name:"VL-01",status:7},
+{name:"VLI-01",status:7},
+{name:"VLCG-01",status:7},
+{name:"VPL-01",status:7},
+{name:"VSAV-01",status:7},
+{name:"VSAV-02",status:7}
+];
+
+let user=null;
+let selectedVeh=null;
+let vehicules=[];
+let logs=[];
+
+db.ref("vehicules").once("value").then(s=>{
+  if(!s.exists()){
+    db.ref("vehicules").set(defaultVehicules);
+  }
+});
+
+db.ref("vehicules").on("value",s=>{
+  vehicules=s.val()||defaultVehicules;
+  if(user){
+    renderVeh();
+  }
+});
+
+db.ref("history").on("value",s=>{
+  renderHistory(s.val()||[]);
+});
+
+db.ref("logs").on("value",s=>{
+  logs=s.val()||[];
+  renderLogs(logs);
+});
+
+function updatePrecis(){
+let type=document.getElementById("type").value;
+let precision=document.getElementById("precision");
+precision.innerHTML='<option value="">Précision intervention</option>';
+if(!precisions[type])return;
+
+precisions[type].forEach(p=>{
+let opt=document.createElement("option");
+opt.value=p;
+opt.textContent=p;
+precision.appendChild(opt);
+});
+}
+
+function enter(){
+let mat=document.getElementById("matricule").value.trim();
+let role=document.getElementById("role").value;
+
+if(!usersMap[mat]||!usersMap[mat].includes(role)){
+alert("❌ Accès refusé");
+return;
+}
+
+user={name:mat,role:role};
+
+logs.push({
+matricule:mat,
+role:role,
+time:new Date().toLocaleString()
+});
+
+db.ref("logs").set(logs);
+
+document.getElementById("login").style.display="none";
+document.querySelector(".container").style.display="block";
+
+renderVeh();
+}
+
+function retourAccueil(){
+user=null;
+selectedVeh=null;
+document.getElementById("matricule").value="";
+document.getElementById("role").value="OPERATEUR";
+document.getElementById("login").style.display="flex";
+document.querySelector(".container").style.display="none";
+}
+
+function renderVeh(){
+let box=document.getElementById("veh");
+box.innerHTML="";
+
+vehicules.forEach((v,i)=>{
+let div=document.createElement("div");
+div.className="vehicle";
+
+let infos="";
+if(v.intervention){
+infos=" | Inter N° "+v.intervention+" - "+(v.adresse||"");
+}
+
+div.innerHTML=
+v.name+
+' - <span class="status-'+v.status+'">'+
+(statusLabels[v.status]||("Statut "+v.status))+
+"</span>"+
+infos;
+
+div.onclick=function(){
+selectedVeh=i;
+openPopup();
+};
+
+box.appendChild(div);
+});
+}
+
+function openPopup(){
+if(selectedVeh===null)return;
+
+let popup=document.getElementById("popup");
+let btns=document.getElementById("statusBtns");
+btns.innerHTML="";
+
+statuses.forEach(s=>{
+let b=document.createElement("button");
+b.innerHTML=s.label;
+
+b.onclick=function(){
+vehicules[selectedVeh].status=s.val;
+db.ref("vehicules").set(vehicules);
+popup.style.display="none";
+renderVeh();
+};
+
+btns.appendChild(b);
+});
+
+popup.style.display="flex";
+}
+
+function createInter(){
+let numero=Date.now();
+
+let type=document.getElementById("type").value;
+let precision=document.getElementById("precision").value;
+let adresse=document.getElementById("adresse").value;
+let obs=document.getElementById("obs").value;
+let veh=document.getElementById("vehiculesInter").value;
+let webhook=document.getElementById("webhook").value;
+
+let text=`INTERVENTION N° ${numero}
+TYPE : ${type}
+PRECISION : ${precision}
+ADRESSE : ${adresse}
+OBS : ${obs}
+VEHICULES : ${veh}`;
+
+document.getElementById("sheet").innerText=text;
+
+let engages=veh.split(/[,; ]+/).map(v=>v.trim().toUpperCase()).filter(v=>v);
+
+vehicules.forEach(v=>{
+if(engages.includes(v.name.toUpperCase())){
+v.status=1;
+v.intervention=numero;
+v.adresse=adresse;
+v.type=type;
+v.precision=precision;
+}
+});
+
+db.ref("vehicules").set(vehicules);
+
+db.ref("history").once("value").then(s=>{
+let history=s.val()||[];
+history.push({
+numero:numero,
+type:type,
+precision:precision,
+adresse:adresse,
+vehicules:veh,
+time:new Date().toLocaleString()
+});
+db.ref("history").set(history);
+});
+
+if(webhook){
+fetch(webhook,{
+method:"POST",
+headers:{ "Content-Type":"application/json" },
+body:JSON.stringify({ content:text })
+})
+.then(()=>alert("✅ Intervention N° "+numero+" créée et envoyée"))
+.catch(()=>alert("⚠️ Intervention créée, mais erreur Discord"));
+}else{
+alert("✅ Intervention N° "+numero+" créée");
+}
+}
+
+function copySheet(){
+navigator.clipboard.writeText(document.getElementById("sheet").innerText);
+alert("📋 Copié");
+}
+
+function pdf(){
+const { jsPDF } = window.jspdf;
+let doc=new jsPDF();
+doc.text(document.getElementById("sheet").innerText,10,10);
+doc.save("intervention.pdf");
+}
+
+function renderHistory(history){
+document.getElementById("history").innerHTML=
+history.slice(-10).reverse()
+.map(h=>`N° ${h.numero||"?"} - ${h.type||""} - ${h.precision||""} - ${h.adresse||""} - ${h.time||""}`)
+.join("<br>");
+}
+
+function clearHistory(){
+if(!user||user.name!=="BSPPlutèce"){
+alert("❌ Accès refusé");
+return;
+}
+db.ref("history").set([]);
+}
+
+function renderLogs(logsList){
+document.getElementById("logs").innerHTML=
+logsList.slice(-10).reverse()
+.map(l=>`${l.matricule} - ${l.role} - ${l.time}`)
+.join("<br>");
+}
+
+function clearLogs(){
+if(!user||user.name!=="BSPPlutèce"){
+alert("❌ Accès refusé");
+return;
+}
+logs=[];
+db.ref("logs").set([]);
+}
+
+window.onload=function(){
+document.getElementById("login").style.display="flex";
+document.querySelector(".container").style.display="none";
+};
+</script>
+
+</body>
+</html>
